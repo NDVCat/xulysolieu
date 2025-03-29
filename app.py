@@ -37,6 +37,9 @@ def preprocess_input(df):
         if col not in df.columns:
             df[col] = np.nan
 
+    # Đảm bảo thứ tự cột đúng với khi huấn luyện
+    df = df.reindex(columns=EXPECTED_COLUMNS)
+
     # Chuyển đổi kiểu dữ liệu
     for col in EXPECTED_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors='coerce')
