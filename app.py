@@ -8,7 +8,7 @@ import io
 app = Flask(__name__)
 
 # 📌 Định nghĩa các cột đầu vào cần thiết
-EXPECTED_COLUMNS = ['Qgas', 'Qwater', 'Oilrate', 'LiqRate', 'DayOn', 'ChokeSize', 'GOR', 'GasRate', 'Press_WH', 'Qoil']
+EXPECTED_COLUMNS = ['DayOn','Qoil','Qgas','Qwater','GOR','ChokeSize','Press_WH','Oilrate','LiqRate']
 
 # 📌 Tải tất cả mô hình từ tệp duy nhất
 MODEL_FILE = "reverse_prediction_models.pkl"
@@ -29,22 +29,25 @@ print(f"✅ Đã tải {len(models)} mô hình:", list(models.keys()))
 
 # 📌 Hàm tiền xử lý dữ liệu đầu vào
 def preprocess_input(df):
+    # Chuyển các giá trị không hợp lệ thành NaN
+    df.replace({"...": np.nan, "null": np.nan, "NaN": np.nan, "": np.nan}, inplace=True)
+
     # Đảm bảo tất cả các cột cần thiết đều có trong DataFrame
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
-            df[col] = 0.0
+            df[col] = np.nan
 
     # Chuyển đổi kiểu dữ liệu
-    df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
+    for col in EXPECTED_COLUMNS:
+        df[col] = pd.to_numeric(df[col], errors='coerce')
 
-    # Điền giá trị thiếu bằng mô hình
+    # Sử dụng mô hình để xử lý giá trị thiếu
     for target_col, model in models.items():
-        if target_col in df.columns:
-            missing_rows = df[df[target_col].isnull()]
-            if not missing_rows.empty:
-                print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
-                filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
-                df.loc[missing_rows.index, target_col] = filled_values
+        missing_rows = df[df[target_col].isnull()]
+        if not missing_rows.empty:
+            print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
+            filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
+            df.loc[missing_rows.index, target_col] = filled_values
 
     return df
 
