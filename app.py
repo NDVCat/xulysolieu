@@ -47,21 +47,6 @@ def preprocess_input(df):
     # Lưu lại vị trí các giá trị bị thiếu
     missing_positions = {col: df[df[col].isnull()].index.tolist() for col in EXPECTED_COLUMNS}
 
-    # Xử lý các cột thiếu dữ liệu
-    for col in df.columns:
-        # Nếu toàn bộ cột là NaN, thay thế bằng 0
-        if df[col].isnull().all():
-            df[col] = 0
-        # Nếu cột có duy nhất một giá trị khác NaN, điền giá trị đó vào các ô trống
-        elif df[col].nunique(dropna=True) == 1:
-            unique_value = df[col].dropna().iloc[0]
-            df[col] = df[col].fillna(unique_value)
-
-    # Thay thế NaN bằng giá trị trung vị của mỗi cột
-    for col in EXPECTED_COLUMNS:
-        median_value = df[col].median()
-        df[col] = df[col].fillna(median_value)
-
     # Sử dụng mô hình để xử lý giá trị thiếu
     for target_col, model in models.items():
         missing_rows = df[df[target_col].isnull()]
@@ -98,27 +83,6 @@ def upload_file():
 
         # Tiền xử lý dữ liệu
         df, missing_positions = preprocess_input(df)
-
-        # 📌 Dự đoán dữ liệu mới
-        predictions = {}
-        for target_col, model in models.items():
-            try:
-                feature_df = df[EXPECTED_COLUMNS]
-
-                # Đảm bảo thứ tự cột khớp với khi huấn luyện
-                model_features = model.feature_names_in_
-                if list(feature_df.columns) != list(model_features):
-                    print(f"⚠️ Cột của feature_df: {list(feature_df.columns)}")
-                    print(f"⚠️ Cột mong đợi từ model: {list(model_features)}")
-                    feature_df = feature_df.reindex(columns=model_features)
-
-                print(f"🔹 Dự đoán giá trị cho {target_col}...")
-                print("📊 Input cho model.predict:", feature_df.head())
-
-                df[f'Predicted_{target_col}'] = model.predict(feature_df)
-                predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
-            except Exception as e:
-                return jsonify({'error': f'Model prediction error for {target_col}: {str(e)}'}), 500
 
         # Chuyển đổi dữ liệu dự đoán thành JSON
         response = {
