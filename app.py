@@ -10,20 +10,19 @@ app = Flask(__name__)
 # 📌 Định nghĩa các cột đầu vào cần thiết
 EXPECTED_COLUMNS = ['Qgas', 'Qwater', 'Oilrate', 'LiqRate', 'DayOn']
 
-# 📌 Tải tất cả mô hình đã huấn luyện
-MODEL_DIR = "models"  # Thư mục chứa các mô hình
-models = {}
+# 📌 Tải tất cả mô hình từ tệp duy nhất
+MODEL_FILE = "reverse_prediction_models.pkl"
 
-if not os.path.exists(MODEL_DIR):
-    raise FileNotFoundError(f"⚠️ Thư mục '{MODEL_DIR}' không tồn tại!")
+if not os.path.exists(MODEL_FILE):
+    raise FileNotFoundError(f"⚠️ Không tìm thấy tệp '{MODEL_FILE}'!")
 
-for file in os.listdir(MODEL_DIR):
-    if file.endswith(".pkl"):
-        model_name = file.replace(".pkl", "")
-        models[model_name] = joblib.load(os.path.join(MODEL_DIR, file))
-
-if not models:
-    raise FileNotFoundError("⚠️ Không tìm thấy mô hình nào trong thư mục 'models'!")
+# Load models từ tệp .pkl
+try:
+    models = joblib.load(MODEL_FILE)
+    if not isinstance(models, dict):
+        raise ValueError("⚠️ Dữ liệu trong tệp không phải là dictionary chứa các model!")
+except Exception as e:
+    raise RuntimeError(f"❌ Lỗi khi tải mô hình từ '{MODEL_FILE}': {e}")
 
 print(f"✅ Đã tải {len(models)} mô hình:", list(models.keys()))
 
@@ -81,22 +80,4 @@ def upload_file():
                 feature_df = df[EXPECTED_COLUMNS]  
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
-                predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
-            except Exception as e:
-                return jsonify({'error': f'Model prediction error for {target_col}: {str(e)}'}), 500
-
-        # Chuyển đổi dữ liệu sang CSV string
-        response = {
-            'message': 'CSV processed successfully',
-            'predictions': df.to_dict(orient='records')  # Trả về danh sách JSON
-        }
-
-        return jsonify(response)
-
-    except Exception as e:
-        return jsonify({"error": str(e)}), 500
-
-
-if __name__ == '__main__':
-    port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+                predictions[target
