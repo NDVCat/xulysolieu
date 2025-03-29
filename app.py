@@ -22,30 +22,29 @@ try:
     if not isinstance(models, dict):
         raise ValueError("⚠️ Dữ liệu trong tệp không phải là dictionary chứa các model!")
 except Exception as e:
-    raise RuntimeError(f"❌ Lỗi khi tải mô hình từ '{MODEL_FILE}': {e}")
+    raise RuntimeError(f"❌ Lỗi khi tải mô hình: {e}")
 
 print(f"✅ Đã tải {len(models)} mô hình:", list(models.keys()))
 
 
 # 📌 Hàm tiền xử lý dữ liệu đầu vào
 def preprocess_input(df):
-    # Điền giá trị thiếu cho cột số
-    for col in df.select_dtypes(include=['number']).columns:
-        if df[col].isnull().all():
-            df[col] = 0.0  # Nếu toàn bộ cột không có giá trị, điền 0
-        else:
-            df[col] = df[col].fillna(df[col].mean())  # Điền giá trị trung bình nếu có dữ liệu
-
-    # Điền giá trị thiếu cho cột dạng object
-    for col in df.select_dtypes(include=['object']).columns:
-        df[col] = df[col].fillna('Unknown')
-
-    # Đảm bảo các cột EXPECTED_COLUMNS có trong dataframe
+    # Đảm bảo tất cả các cột cần thiết đều có trong DataFrame
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
-            df[col] = 0.0  # Nếu thiếu cột nào, điền mặc định là 0
+            df[col] = 0.0
 
+    # Chuyển đổi kiểu dữ liệu
     df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
+
+    # Sử dụng mô hình để xử lý giá trị thiếu
+    for target_col, model in models.items():
+        missing_rows = df[df[target_col].isnull()]
+        if not missing_rows.empty:
+            print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
+            filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
+            df.loc[missing_rows.index, target_col] = filled_values
+
     return df
 
 
@@ -56,14 +55,14 @@ def upload_file():
         if not request.data:
             return jsonify({"error": "No CSV data provided"}), 400
 
-        csv_data = request.data.decode('utf-8')  
-        print("📥 Received CSV Data:\n", csv_data[:500])  # Log giới hạn 500 ký tự
+        csv_data = request.data.decode('utf-8')
+        print("📥 Received CSV Data:\n", csv_data[:500])
 
-        # Kiểm tra dữ liệu có phải CSV hợp lệ không
+        # Kiểm tra dữ liệu hợp lệ
         if not csv_data.strip():
             return jsonify({"error": "Empty CSV data received"}), 400
 
-        # Thử đọc CSV
+        # Đọc dữ liệu CSV
         try:
             df = pd.read_csv(io.StringIO(csv_data), encoding='utf-8-sig', skip_blank_lines=True)
         except Exception as e:
@@ -71,23 +70,24 @@ def upload_file():
 
         print("📊 Parsed DataFrame:\n", df.head())
 
+        # Tiền xử lý dữ liệu
         df = preprocess_input(df)
 
         # 📌 Dự đoán dữ liệu mới
         predictions = {}
         for target_col, model in models.items():
             try:
-                feature_df = df[EXPECTED_COLUMNS]  
+                feature_df = df[EXPECTED_COLUMNS]
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
                 predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
             except Exception as e:
                 return jsonify({'error': f'Model prediction error for {target_col}: {str(e)}'}), 500
 
-        # Chuyển đổi dữ liệu sang CSV string
+        # Chuyển đổi dữ liệu dự đoán thành JSON
         response = {
             'message': 'CSV processed successfully',
-            'predictions': df.to_dict(orient='records')  # Trả về danh sách JSON
+            'predictions': df.to_dict(orient='records')
         }
 
         return jsonify(response)
