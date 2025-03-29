@@ -53,13 +53,15 @@ def preprocess_input(df):
         if missing_cols:
             print(f"🔍 Dự đoán giá trị thiếu cho dòng {idx}...")
 
-            # Chuẩn bị dữ liệu đầu vào cho mô hình
-            input_data = row[EXPECTED_COLUMNS].values.reshape(1, -1)
-
             # Dự đoán từng cột thiếu bằng mô hình tương ứng
             for col in missing_cols:
                 if col in models:
                     try:
+                        # Loại bỏ cột đích khi dự đoán
+                        input_features = [c for c in EXPECTED_COLUMNS if c != col]
+                        input_data = row[input_features].values.reshape(1, -1)
+
+                        # Thực hiện dự đoán
                         predicted_value = models[col].predict(input_data)[0]
                         df.at[idx, col] = predicted_value
                         print(f"✅ Dự đoán {col} tại dòng {idx}: {predicted_value}")
