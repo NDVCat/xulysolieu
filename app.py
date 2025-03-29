@@ -8,7 +8,7 @@ import io
 app = Flask(__name__)
 
 # 📌 Định nghĩa các cột đầu vào cần thiết
-EXPECTED_COLUMNS = ['Qgas', 'Qwater', 'Oilrate', 'LiqRate', 'DayOn']
+EXPECTED_COLUMNS = ['Qgas', 'Qwater', 'Oilrate', 'LiqRate', 'DayOn', 'ChokeSize', 'GOR', 'GasRate', 'Press_WH', 'Qoil']
 
 # 📌 Tải tất cả mô hình từ tệp duy nhất
 MODEL_FILE = "reverse_prediction_models.pkl"
