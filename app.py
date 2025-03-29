@@ -80,4 +80,22 @@ def upload_file():
                 feature_df = df[EXPECTED_COLUMNS]  
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
-                predictions[target
+                predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
+            except Exception as e:
+                return jsonify({'error': f'Model prediction error for {target_col}: {str(e)}'}), 500
+
+        # Chuyển đổi dữ liệu sang CSV string
+        response = {
+            'message': 'CSV processed successfully',
+            'predictions': df.to_dict(orient='records')  # Trả về danh sách JSON
+        }
+
+        return jsonify(response)
+
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+if __name__ == '__main__':
+    port = int(os.environ.get('PORT', 10000))
+    app.run(host='0.0.0.0', port=port)
