@@ -103,6 +103,8 @@ def upload_file():
         for target_col, model in models.items():
             try:
                 feature_df = df[EXPECTED_COLUMNS]
+                feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)  # Đảm bảo đúng thứ tự cột
+
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
                 predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
