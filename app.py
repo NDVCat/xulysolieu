@@ -55,12 +55,12 @@ def preprocess_input(df):
         # Nếu cột có duy nhất một giá trị khác NaN, điền giá trị đó vào các ô trống
         elif df[col].nunique(dropna=True) == 1:
             unique_value = df[col].dropna().iloc[0]
-            df[col].fillna(unique_value, inplace=True)
+            df[col] = df[col].fillna(unique_value)
 
     # Thay thế NaN bằng giá trị trung vị của mỗi cột
     for col in EXPECTED_COLUMNS:
         median_value = df[col].median()
-        df[col].fillna(median_value, inplace=True)
+        df[col] = df[col].fillna(median_value)
 
     # Sử dụng mô hình để xử lý giá trị thiếu
     for target_col, model in models.items():
