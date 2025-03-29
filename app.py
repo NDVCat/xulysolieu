@@ -103,7 +103,12 @@ def upload_file():
         for target_col, model in models.items():
             try:
                 feature_df = df[EXPECTED_COLUMNS]
-                feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)  # Đảm bảo đúng thứ tự cột
+
+                # Đảm bảo thứ tự cột khớp với khi huấn luyện
+                feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)
+
+                print(f"📏 Kiểm tra cột đầu vào cho {target_col}:", feature_df.columns.tolist())
+                print(f"🔢 Kiểu dữ liệu của các cột: \n{feature_df.dtypes}")
 
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
