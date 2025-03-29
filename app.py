@@ -37,13 +37,14 @@ def preprocess_input(df):
     # Chuyển đổi kiểu dữ liệu
     df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
 
-    # Sử dụng mô hình để xử lý giá trị thiếu
+    # Điền giá trị thiếu bằng mô hình
     for target_col, model in models.items():
-        missing_rows = df[df[target_col].isnull()]
-        if not missing_rows.empty:
-            print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
-            filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
-            df.loc[missing_rows.index, target_col] = filled_values
+        if target_col in df.columns:
+            missing_rows = df[df[target_col].isnull()]
+            if not missing_rows.empty:
+                print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
+                filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
+                df.loc[missing_rows.index, target_col] = filled_values
 
     return df
 
