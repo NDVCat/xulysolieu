@@ -8,7 +8,7 @@ import io
 app = Flask(__name__)
 
 # 📌 Định nghĩa các cột đầu vào cần thiết
-EXPECTED_COLUMNS = ['DayOn','Qoil','Qgas','Qwater','GOR','ChokeSize','Press_WH','Oilrate','LiqRate','GasRate']
+EXPECTED_COLUMNS = ['DayOn', 'Qoil', 'Qgas', 'Qwater', 'GOR', 'ChokeSize', 'Press_WH', 'Oilrate', 'LiqRate', 'GasRate']
 
 # 📌 Tải tất cả mô hình từ tệp duy nhất
 MODEL_FILE = "reverse_prediction_models.pkl"
@@ -40,35 +40,39 @@ def preprocess_input(df):
     # Đảm bảo thứ tự cột đúng với khi huấn luyện
     df = df.reindex(columns=EXPECTED_COLUMNS)
 
-    # Chuyển đổi kiểu dữ liệu
+    # Chuyển đổi kiểu dữ liệu về dạng số
     for col in EXPECTED_COLUMNS:
         df[col] = pd.to_numeric(df[col], errors='coerce')
 
     # Lưu lại vị trí các giá trị bị thiếu
     missing_positions = {col: df[df[col].isnull()].index.tolist() for col in EXPECTED_COLUMNS}
 
-    # Xử lý các cột thiếu dữ liệu
-    for col in df.columns:
-        # Nếu toàn bộ cột là NaN, thay thế bằng 0
-        if df[col].isnull().all():
-            df[col] = 0
-        # Nếu cột có duy nhất một giá trị khác NaN, điền giá trị đó vào các ô trống
-        elif df[col].nunique(dropna=True) == 1:
-            unique_value = df[col].dropna().iloc[0]
-            df.fillna({col: unique_value}, inplace=True)
-
-    # Thay thế NaN bằng giá trị trung vị của mỗi cột
+    # Xử lý giá trị thiếu theo yêu cầu
     for col in EXPECTED_COLUMNS:
-        median_value = df[col].median()
-        df.fillna({col: median_value}, inplace=True)
+        if df[col].isnull().all():
+            # ✅ Nếu toàn bộ cột là NaN, thay thế bằng 0
+            df[col] = 0
+        elif df[col].nunique(dropna=True) == 1:
+            # ✅ Nếu cột chỉ có 1 giá trị duy nhất, điền giá trị đó
+            unique_value = df[col].dropna().iloc[0]
+            df[col].fillna(unique_value, inplace=True)
+        else:
+            # ✅ Nếu cột có giá trị khác nhau, điền NaN bằng giá trị trung vị
+            median_value = df[col].median()
+            if pd.isna(median_value):
+                median_value = 0
+            df[col].fillna(median_value, inplace=True)
 
-    # Sử dụng mô hình để xử lý giá trị thiếu
+    # 🔍 Dự đoán lại các giá trị đã thay thế bằng mô hình
     for target_col, model in models.items():
         missing_rows = df[df[target_col].isnull()]
         if not missing_rows.empty:
-            print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
-            filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
-            df.loc[missing_rows.index, target_col] = filled_values
+            print(f"🔍 Dự đoán giá trị thiếu cho {target_col}...")
+            try:
+                predicted_values = model.predict(missing_rows[EXPECTED_COLUMNS])
+                df.loc[missing_rows.index, target_col] = predicted_values
+            except Exception as e:
+                print(f"❌ Lỗi dự đoán cho {target_col}: {e}")
 
     return df, missing_positions
 
