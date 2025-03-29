@@ -106,7 +106,11 @@ def upload_file():
                 feature_df = df[EXPECTED_COLUMNS]
 
                 # Đảm bảo thứ tự cột khớp với khi huấn luyện
-                feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)
+                model_features = model.feature_names_in_
+                if list(feature_df.columns) != list(model_features):
+                    print(f"⚠️ Cột của feature_df: {list(feature_df.columns)}")
+                    print(f"⚠️ Cột mong đợi từ model: {list(model_features)}")
+                    feature_df = feature_df.reindex(columns=model_features)
 
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 print("📊 Input cho model.predict:", feature_df.head())
