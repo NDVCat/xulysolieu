@@ -59,7 +59,7 @@ def preprocess_input(df):
                     try:
                         # Loại bỏ cột đích khi dự đoán
                         input_features = [c for c in EXPECTED_COLUMNS if c != col]
-                        input_data = row[input_features].values.reshape(1, -1)
+                        input_data = pd.DataFrame([row[input_features].values], columns=input_features)
 
                         # Thực hiện dự đoán
                         predicted_value = models[col].predict(input_data)[0]
