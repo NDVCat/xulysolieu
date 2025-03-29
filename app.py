@@ -55,12 +55,12 @@ def preprocess_input(df):
         # Nếu cột có duy nhất một giá trị khác NaN, điền giá trị đó vào các ô trống
         elif df[col].nunique(dropna=True) == 1:
             unique_value = df[col].dropna().iloc[0]
-            df[col].fillna(unique_value, inplace=True)
+            df.fillna({col: unique_value}, inplace=True)
 
     # Thay thế NaN bằng giá trị trung vị của mỗi cột
     for col in EXPECTED_COLUMNS:
         median_value = df[col].median()
-        df[col].fillna(median_value, inplace=True)
+        df.fillna({col: median_value}, inplace=True)
 
     # Sử dụng mô hình để xử lý giá trị thiếu
     for target_col, model in models.items():
@@ -106,9 +106,6 @@ def upload_file():
 
                 # Đảm bảo thứ tự cột khớp với khi huấn luyện
                 feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)
-
-                print(f"📏 Kiểm tra cột đầu vào cho {target_col}:", feature_df.columns.tolist())
-                print(f"🔢 Kiểu dữ liệu của các cột: \n{feature_df.dtypes}")
 
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
