@@ -47,14 +47,24 @@ def preprocess_input(df):
     # Lưu lại vị trí các giá trị bị thiếu
     missing_positions = {col: df[df[col].isnull()].index.tolist() for col in EXPECTED_COLUMNS}
 
-    # Sử dụng mô hình để xử lý giá trị thiếu
-    for target_col, model in models.items():
-        missing_rows = df[df[target_col].isnull()]
-        if not missing_rows.empty:
-            print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
-            print("📊 Input cho mô hình:", missing_rows[EXPECTED_COLUMNS])
-            filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
-            df.loc[missing_rows.index, target_col] = filled_values
+    # Dự đoán giá trị thiếu cho từng hàng
+    for idx, row in df.iterrows():
+        missing_cols = row[row.isnull()].index.tolist()
+        if missing_cols:
+            print(f"🔍 Dự đoán giá trị thiếu cho dòng {idx}...")
+
+            # Chuẩn bị dữ liệu đầu vào cho mô hình
+            input_data = row[EXPECTED_COLUMNS].values.reshape(1, -1)
+
+            # Dự đoán từng cột thiếu bằng mô hình tương ứng
+            for col in missing_cols:
+                if col in models:
+                    try:
+                        predicted_value = models[col].predict(input_data)[0]
+                        df.at[idx, col] = predicted_value
+                        print(f"✅ Dự đoán {col} tại dòng {idx}: {predicted_value}")
+                    except Exception as e:
+                        print(f"❌ Lỗi khi dự đoán {col} tại dòng {idx}: {e}")
 
     return df, missing_positions
 
@@ -94,6 +104,7 @@ def upload_file():
         return jsonify(response)
 
     except Exception as e:
+        print(f"❌ Lỗi hệ thống: {e}")
         return jsonify({"error": str(e)}), 500
 
 
