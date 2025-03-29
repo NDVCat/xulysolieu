@@ -55,18 +55,19 @@ def preprocess_input(df):
         # Nếu cột có duy nhất một giá trị khác NaN, điền giá trị đó vào các ô trống
         elif df[col].nunique(dropna=True) == 1:
             unique_value = df[col].dropna().iloc[0]
-            df[col] = df[col].fillna(unique_value)
+            df[col].fillna(unique_value, inplace=True)
 
     # Thay thế NaN bằng giá trị trung vị của mỗi cột
     for col in EXPECTED_COLUMNS:
         median_value = df[col].median()
-        df[col] = df[col].fillna(median_value)
+        df[col].fillna(median_value, inplace=True)
 
     # Sử dụng mô hình để xử lý giá trị thiếu
     for target_col, model in models.items():
         missing_rows = df[df[target_col].isnull()]
         if not missing_rows.empty:
             print(f"🔍 Đang xử lý giá trị thiếu cho {target_col}...")
+            print("📊 Input cho mô hình:", missing_rows[EXPECTED_COLUMNS])
             filled_values = model.predict(missing_rows[EXPECTED_COLUMNS])
             df.loc[missing_rows.index, target_col] = filled_values
 
@@ -108,6 +109,8 @@ def upload_file():
                 feature_df = feature_df.reindex(columns=EXPECTED_COLUMNS)
 
                 print(f"🔹 Dự đoán giá trị cho {target_col}...")
+                print("📊 Input cho model.predict:", feature_df.head())
+
                 df[f'Predicted_{target_col}'] = model.predict(feature_df)
                 predictions[target_col] = df[f'Predicted_{target_col}'].tolist()
             except Exception as e:
