@@ -4,112 +4,172 @@ import numpy as np
 import pandas as pd
 import os
 import io
+from sklearn.decomposition import PCA
+from sklearn.ensemble import IsolationForest
+from sklearn.preprocessing import StandardScaler
 
 app = Flask(__name__)
 
 # 📌 Định nghĩa các cột đầu vào cần thiết
-EXPECTED_COLUMNS = ['DayOn','Qoil','Qgas','Qwater','GOR','ChokeSize','Press_WH','Oilrate','LiqRate','GasRate']
+PRESERVED_COLUMNS = ['UniqueId', 'Date', 'Method']
+EXPECTED_COLUMNS = ['DayOn', 'Qoil', 'Qgas', 'Qwater', 'GOR', 'ChokeSize', 
+                   'Press_WH', 'Oilrate', 'LiqRate', 'GasRate']
 
-# 📌 Tải tất cả mô hình từ tệp duy nhất
-MODEL_FILE = "reverse_prediction_models.pkl"
+# 📌 Tải tất cả mô hình
+MODEL_FILES = {
+    "prediction_models": "reverse_prediction_models.pkl",
+    "anomaly_detection": "combined_models.pkl"
+}
 
-if not os.path.exists(MODEL_FILE):
-    raise FileNotFoundError(f"⚠️ Không tìm thấy tệp '{MODEL_FILE}'!")
-
-# Load models từ tệp .pkl
+# Kiểm tra và tải mô hình
 try:
-    models = joblib.load(MODEL_FILE)
-    if not isinstance(models, dict):
-        raise ValueError("⚠️ Dữ liệu trong tệp không phải là dictionary chứa các model!")
+    # Tải mô hình dự đoán giá trị thiếu
+    if not os.path.exists(MODEL_FILES["prediction_models"]):
+        raise FileNotFoundError(f"⚠️ Không tìm thấy tệp '{MODEL_FILES['prediction_models']}'!")
+    models = joblib.load(MODEL_FILES["prediction_models"])
+    
+    # Tải mô hình phát hiện bất thường
+    if not os.path.exists(MODEL_FILES["anomaly_detection"]):
+        raise FileNotFoundError(f"⚠️ Không tìm thấy tệp '{MODEL_FILES['anomaly_detection']}'!")
+    combined_models = joblib.load(MODEL_FILES["anomaly_detection"])
+    scaler = combined_models["scaler"]
+    pca = combined_models["pca"]
+    iso_forest = combined_models["isolation_forest"]
+    
+    print("✅ Đã tải tất cả mô hình thành công!")
 except Exception as e:
     raise RuntimeError(f"❌ Lỗi khi tải mô hình: {e}")
 
-print(f"✅ Đã tải {len(models)} mô hình:", list(models.keys()))
-
-
 # 📌 Hàm tiền xử lý dữ liệu đầu vào
 def preprocess_input(df):
+    # Chọn các cột cần thiết
+    df = df[[col for col in PRESERVED_COLUMNS + EXPECTED_COLUMNS if col in df.columns]]
+    
     # Chuyển các giá trị không hợp lệ thành NaN
     df.replace({"...": np.nan, "null": np.nan, "NaN": np.nan, "": np.nan}, inplace=True)
-
+    
     # Đảm bảo tất cả các cột cần thiết đều có trong DataFrame
     for col in EXPECTED_COLUMNS:
         if col not in df.columns:
             df[col] = np.nan
-
-    # Đảm bảo thứ tự cột đúng với khi huấn luyện
-    df = df.reindex(columns=EXPECTED_COLUMNS)
-
+            
     # Chuyển đổi kiểu dữ liệu
-    for col in EXPECTED_COLUMNS:
-        df[col] = pd.to_numeric(df[col], errors='coerce')
+    df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
+    
+    return df
 
-    # Lưu lại vị trí các giá trị bị thiếu
-    missing_positions = {col: df[df[col].isnull()].index.tolist() for col in EXPECTED_COLUMNS}
-
-    # Dự đoán giá trị thiếu cho từng hàng
+# 📌 Hàm dự đoán giá trị thiếu
+def predict_missing_values(df):
+    forecast_mask = pd.DataFrame(False, index=df.index, columns=EXPECTED_COLUMNS)
+    forecasted_info = []
+    
     for idx, row in df.iterrows():
-        missing_cols = row[row.isnull()].index.tolist()
-        if missing_cols:
-            print(f"🔍 Dự đoán giá trị thiếu cho dòng {idx}...")
-
-            # Dự đoán từng cột thiếu bằng mô hình tương ứng
-            for col in missing_cols:
+        missing_cols = row[EXPECTED_COLUMNS].isnull()
+        if missing_cols.any():
+            missing_cols_list = missing_cols[missing_cols].index.tolist()
+            
+            # Ưu tiên dự đoán Qoil trước
+            if 'Qoil' in missing_cols_list:
+                missing_cols_list.remove('Qoil')
+                missing_cols_list.insert(0, 'Qoil')
+            
+            for col in missing_cols_list:
                 if col in models:
                     try:
-                        # Loại bỏ cột đích khi dự đoán
-                        input_features = [c for c in EXPECTED_COLUMNS if c != col]
+                        # Lấy các features đầu vào cho mô hình
+                        input_features = [f for f in EXPECTED_COLUMNS if f != col]
                         input_data = pd.DataFrame([row[input_features].values], columns=input_features)
-
-                        # Thực hiện dự đoán
+                        
+                        # Dự đoán giá trị thiếu
                         predicted_value = models[col].predict(input_data)[0]
                         df.at[idx, col] = predicted_value
-                        print(f"✅ Dự đoán {col} tại dòng {idx}: {predicted_value}")
+                        forecast_mask.at[idx, col] = True
+                        
+                        forecasted_info.append({
+                            'row_index': idx,
+                            'column': col,
+                            'predicted_value': predicted_value
+                        })
                     except Exception as e:
                         print(f"❌ Lỗi khi dự đoán {col} tại dòng {idx}: {e}")
+    
+    df["is_forecasted"] = forecast_mask.any(axis=1)
+    forecasted_columns = forecast_mask.apply(lambda row: ", ".join(row.index[row]), axis=1)
+    df["forecasted_columns"] = forecasted_columns
+    
+    return df, forecasted_info
 
-    return df, missing_positions
-
-
-# 📌 API xử lý file CSV đầu vào và dự đoán kết quả
-@app.route('/upload', methods=['POST'])
-def upload_file():
+# 📌 Hàm phát hiện bất thường
+def detect_anomalies(df):
     try:
-        if not request.data:
-            return jsonify({"error": "No CSV data provided"}), 400
+        # Chuẩn hóa dữ liệu
+        numeric_cols = [col for col in EXPECTED_COLUMNS if col in scaler.feature_names_in_]
+        df_scaled = pd.DataFrame(scaler.transform(df[numeric_cols]), columns=numeric_cols)
+        
+        # Áp dụng PCA
+        pca_result = pca.transform(df_scaled)
+        pca_df = pd.DataFrame(pca_result[:, :2], columns=["PC1", "PC2"])
+        
+        # Phát hiện bất thường
+        anomalies = iso_forest.predict(pca_df[["PC1", "PC2"]])
+        df["anomaly"] = anomalies
+        df["anomaly_label"] = df["anomaly"].map({1: "normal", -1: "anomaly"})
+        
+        return df
+    except Exception as e:
+        print(f"❌ Lỗi khi phát hiện bất thường: {e}")
+        return df
 
-        csv_data = request.data.decode('utf-8')
-        print("📥 Received CSV Data:\n", csv_data[:500])
-
-        # Kiểm tra dữ liệu hợp lệ
-        if not csv_data.strip():
-            return jsonify({"error": "Empty CSV data received"}), 400
-
-        # Đọc dữ liệu CSV
+# 📌 API xử lý file CSV đầu vào
+@app.route('/process', methods=['POST'])
+def process_data():
+    try:
+        # Kiểm tra dữ liệu đầu vào
+        if 'file' not in request.files:
+            return jsonify({"error": "No file provided"}), 400
+        
+        file = request.files['file']
+        if file.filename == '':
+            return jsonify({"error": "No selected file"}), 400
+        
+        # Đọc file (hỗ trợ cả Excel và CSV)
         try:
-            df = pd.read_csv(io.StringIO(csv_data), encoding='utf-8-sig', skip_blank_lines=True)
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            else:
+                return jsonify({"error": "Unsupported file format"}), 400
         except Exception as e:
-            return jsonify({"error": f"CSV Parsing Error: {str(e)}"}), 400
-
-        print("📊 Parsed DataFrame:\n", df.head())
-
+            return jsonify({"error": f"Error reading file: {str(e)}"}), 400
+        
         # Tiền xử lý dữ liệu
-        df, missing_positions = preprocess_input(df)
-
-        # Chuyển đổi dữ liệu dự đoán thành JSON
-        response = {
-            'message': 'CSV processed successfully',
-            'predictions': df.to_dict(orient='records'),
-            'missing_positions': missing_positions
+        df = preprocess_input(df)
+        
+        # Dự đoán giá trị thiếu
+        df, forecasted_info = predict_missing_values(df)
+        
+        # Phát hiện bất thường
+        df = detect_anomalies(df)
+        
+        # Chuẩn bị kết quả
+        result = {
+            "status": "success",
+            "data": df.to_dict(orient='records'),
+            "forecasted_info": forecasted_info,
+            "anomaly_stats": {
+                "total_records": len(df),
+                "normal": len(df[df["anomaly"] == 1]),
+                "anomaly": len(df[df["anomaly"] == -1])
+            }
         }
-
-        return jsonify(response)
-
+        
+        return jsonify(result)
+    
     except Exception as e:
         print(f"❌ Lỗi hệ thống: {e}")
-        return jsonify({"error": str(e)}), 500
-
+        return jsonify({"error": str(e), "status": "failed"}), 500
 
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
-    app.run(host='0.0.0.0', port=port)
+    app.run(host='0.0.0.0', port=port, debug=True)
