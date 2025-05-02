@@ -33,10 +33,12 @@ try:
 except Exception as e:
     raise RuntimeError(f"❌ Lỗi khi tải mô hình phát hiện bất thường: {e}")
 
+# 📌 Tải mô hình dự đoán riêng lẻ
 def load_model(col_name):
     model_path = os.path.join(MODEL_DIR, f"{col_name}.pkl")
     return joblib.load(model_path) if os.path.exists(model_path) else None
 
+# 📌 Xử lý dữ liệu đầu vào
 def preprocess_input(df):
     df = df[[col for col in PRESERVED_COLUMNS + EXPECTED_COLUMNS if col in df.columns]]
     df.replace({"...": np.nan, "null": np.nan, "NaN": np.nan, "": np.nan}, inplace=True)
@@ -48,6 +50,7 @@ def preprocess_input(df):
     df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
     return df
 
+# 📌 Dự đoán các giá trị thiếu
 def predict_missing_values(df):
     forecast_mask = pd.DataFrame(False, index=df.index, columns=EXPECTED_COLUMNS)
     forecasted_info = []
@@ -83,28 +86,42 @@ def predict_missing_values(df):
     df["forecasted_columns"] = forecasted_columns
     return df, forecasted_info
 
+# 📌 Phát hiện bất thường
 def detect_anomalies(df):
     try:
         numeric_cols = [col for col in EXPECTED_COLUMNS if col in scaler.feature_names_in_]
-        df_scaled = pd.DataFrame(scaler.transform(df[numeric_cols]), columns=numeric_cols)
+        df_anomaly = df[numeric_cols].dropna()
+
+        if df_anomaly.empty:
+            print("⚠️ Không có dòng nào đủ dữ liệu để phát hiện bất thường.")
+            df["anomaly"] = np.nan
+            df["anomaly_label"] = "unknown"
+            return df
+
+        # Chuẩn hóa, PCA, Isolation Forest
+        df_scaled = pd.DataFrame(scaler.transform(df_anomaly), columns=numeric_cols)
         pca_result = pca.transform(df_scaled)
         pca_df = pd.DataFrame(pca_result[:, :2], columns=["PC1", "PC2"])
-        anomalies = iso_forest.predict(pca_df[["PC1", "PC2"]])
-        df["anomaly"] = anomalies
+        anomaly_pred = iso_forest.predict(pca_df)
+
+        df.loc[df_anomaly.index, "anomaly"] = anomaly_pred
         df["anomaly_label"] = df["anomaly"].map({1: "normal", -1: "anomaly"})
+        df["anomaly_label"].fillna("unknown", inplace=True)
+
         return df
     except Exception as e:
         print(f"❌ Lỗi khi phát hiện bất thường: {e}")
+        df["anomaly"] = np.nan
+        df["anomaly_label"] = "error"
         return df
 
+# 📌 API xử lý dữ liệu
 @app.route('/process', methods=['POST'])
 def process_data():
     try:
-        # ✅ Nếu dữ liệu dạng text/csv (Power Automate gửi kiểu này)
         if request.content_type == 'text/csv':
             csv_text = request.data.decode('utf-8')
             df = pd.read_csv(io.StringIO(csv_text))
-        # ✅ Nếu là file thực được gửi lên
         elif 'file' in request.files:
             file = request.files['file']
             if file.filename.endswith('.csv'):
@@ -127,7 +144,9 @@ def process_data():
             "anomaly_stats": {
                 "total_records": len(df),
                 "normal": int((df["anomaly"] == 1).sum()),
-                "anomaly": int((df["anomaly"] == -1).sum())
+                "anomaly": int((df["anomaly"] == -1).sum()),
+                "unknown": int((df["anomaly_label"] == "unknown").sum()),
+                "error": int((df["anomaly_label"] == "error").sum())
             }
         }
 
@@ -137,6 +156,7 @@ def process_data():
         print(f"❌ Lỗi hệ thống: {e}")
         return jsonify({"error": str(e), "status": "failed"}), 500
 
+# 📌 Khởi chạy
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
