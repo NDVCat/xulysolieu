@@ -1,6 +1,7 @@
 flask
-numpy
-scikit-learn==1.5.1
-gunicorn
 pandas
-requests
+numpy
+scikit-learn
+joblib
+openpyxl
+xlrd
