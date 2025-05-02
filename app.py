@@ -3,6 +3,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import os
+import io
 
 from sklearn.decomposition import PCA
 from sklearn.ensemble import IsolationForest
@@ -32,15 +33,10 @@ try:
 except Exception as e:
     raise RuntimeError(f"❌ Lỗi khi tải mô hình phát hiện bất thường: {e}")
 
-# 📌 Hàm tải mô hình dự báo giá trị thiếu (chỉ khi cần)
 def load_model(col_name):
     model_path = os.path.join(MODEL_DIR, f"{col_name}.pkl")
-    if os.path.exists(model_path):
-        return joblib.load(model_path)
-    else:
-        return None
+    return joblib.load(model_path) if os.path.exists(model_path) else None
 
-# 📌 Tiền xử lý đầu vào
 def preprocess_input(df):
     df = df[[col for col in PRESERVED_COLUMNS + EXPECTED_COLUMNS if col in df.columns]]
     df.replace({"...": np.nan, "null": np.nan, "NaN": np.nan, "": np.nan}, inplace=True)
@@ -52,7 +48,6 @@ def preprocess_input(df):
     df[EXPECTED_COLUMNS] = df[EXPECTED_COLUMNS].astype(float)
     return df
 
-# 📌 Dự đoán giá trị thiếu (dynamic model loading)
 def predict_missing_values(df):
     forecast_mask = pd.DataFrame(False, index=df.index, columns=EXPECTED_COLUMNS)
     forecasted_info = []
@@ -88,7 +83,6 @@ def predict_missing_values(df):
     df["forecasted_columns"] = forecasted_columns
     return df, forecasted_info
 
-# 📌 Phát hiện bất thường
 def detect_anomalies(df):
     try:
         numeric_cols = [col for col in EXPECTED_COLUMNS if col in scaler.feature_names_in_]
@@ -103,23 +97,24 @@ def detect_anomalies(df):
         print(f"❌ Lỗi khi phát hiện bất thường: {e}")
         return df
 
-# 📌 API chính
 @app.route('/process', methods=['POST'])
 def process_data():
     try:
-        if 'file' not in request.files:
-            return jsonify({"error": "No file provided"}), 400
-
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"error": "No selected file"}), 400
-
-        if file.filename.endswith('.csv'):
-            df = pd.read_csv(file)
-        elif file.filename.endswith(('.xlsx', '.xls')):
-            df = pd.read_excel(file)
+        # ✅ Nếu dữ liệu dạng text/csv (Power Automate gửi kiểu này)
+        if request.content_type == 'text/csv':
+            csv_text = request.data.decode('utf-8')
+            df = pd.read_csv(io.StringIO(csv_text))
+        # ✅ Nếu là file thực được gửi lên
+        elif 'file' in request.files:
+            file = request.files['file']
+            if file.filename.endswith('.csv'):
+                df = pd.read_csv(file)
+            elif file.filename.endswith(('.xlsx', '.xls')):
+                df = pd.read_excel(file)
+            else:
+                return jsonify({"error": "Unsupported file format"}), 400
         else:
-            return jsonify({"error": "Unsupported file format"}), 400
+            return jsonify({"error": "No valid input found (file or CSV text)"}), 400
 
         df = preprocess_input(df)
         df, forecasted_info = predict_missing_values(df)
