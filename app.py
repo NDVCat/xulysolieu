@@ -16,7 +16,7 @@ ANOMALY_MODEL_PATH = "combined_models.pkl"
 
 PRESERVED_COLUMNS = ['UniqueId', 'Date', 'Method']
 EXPECTED_COLUMNS = ['DayOn', 'Qoil', 'Qgas', 'Qwater', 'GOR', 'ChokeSize',
-                   'Press_WH', 'Oilrate', 'LiqRate', 'GasRate']
+                    'Press_WH', 'Oilrate', 'LiqRate', 'GasRate']
 
 # 📌 Tải mô hình phát hiện bất thường
 try:
@@ -80,8 +80,8 @@ def predict_missing_values(df):
                             'column': col,
                             'predicted_value': predicted_value
                         })
-                except Exception as e:
-                    print(f"❌ Lỗi khi dự đoán {col} tại dòng {idx}: {e}")
+                    except Exception as e:
+                        print(f"❌ Lỗi khi dự đoán {col} tại dòng {idx}: {e}")
 
     df["is_forecasted"] = forecast_mask.any(axis=1).astype(int)
     forecasted_columns = forecast_mask.apply(lambda row: ", ".join(row.index[row]), axis=1)
