@@ -137,9 +137,12 @@ def process_data():
         df, forecasted_info = predict_missing_values(df)
         df = detect_anomalies(df)
 
+        # Chuyển DataFrame thành list of lists (mảng 2 chiều)
+        result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label']].values.tolist()
+
         result = {
             "status": "success",
-            "data": df.to_dict(orient='records'),
+            "data": result_array,  # Trả về mảng dữ liệu thay vì dict
             "forecasted_info": forecasted_info,
             "anomaly_stats": {
                 "total_records": len(df),
