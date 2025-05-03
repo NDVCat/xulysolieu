@@ -173,18 +173,21 @@ def process_data():
         # Trả về dữ liệu dưới dạng CSV cho Power Automate
         result_csv = df.to_csv(index=False)
 
+        # 📌 Thống kê về bất thường
+        anomaly_stats = {
+            "total_records": len(df),
+            "normal": int((df["anomaly"] == 1).sum()),
+            "anomaly": int((df["anomaly"] == -1).sum()),
+            "unknown": int((df["anomaly_label"] == "unknown").sum()),
+            "error": int((df["anomaly_label"] == "error").sum())
+        }
+
         result = {
             "status": "success",
             "data": result_array,
             "csv": result_csv,  # CSV cho Power Automate
             "forecasted_info": forecasted_info,
-            "anomaly_stats": {
-                "total_records": len(df),
-                "normal": int((df["anomaly"] == 1).sum()),
-                "anomaly": int((df["anomaly"] == -1).sum()),
-                "unknown": int((df["anomaly_label"] == "unknown").sum()),
-                "error": int((df["anomaly_label"] == "error").sum())
-            }
+            "anomaly_stats": anomaly_stats
         }
 
         return jsonify(result)
@@ -197,3 +200,4 @@ def process_data():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
