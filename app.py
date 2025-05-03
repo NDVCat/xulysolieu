@@ -98,7 +98,6 @@ def detect_anomalies(df):
             df["anomaly_label"] = "unknown"
             return df
 
-        # Chuẩn hóa, PCA, Isolation Forest
         df_scaled = pd.DataFrame(scaler.transform(df_anomaly), columns=numeric_cols)
         pca_result = pca.transform(df_scaled)
         pca_df = pd.DataFrame(pca_result[:, :2], columns=["PC1", "PC2"])
@@ -115,10 +114,11 @@ def detect_anomalies(df):
         df["anomaly_label"] = "error"
         return df
 
-# 📌 API xử lý dữ liệu
+# 📌 API chính
 @app.route('/process', methods=['POST'])
 def process_data():
     try:
+        # 🔹 Đọc file vào DataFrame
         if request.content_type == 'text/csv':
             csv_text = request.data.decode('utf-8')
             df = pd.read_csv(io.StringIO(csv_text))
@@ -133,16 +133,30 @@ def process_data():
         else:
             return jsonify({"error": "No valid input found (file or CSV text)"}), 400
 
+        # 🔹 Bước 1: Tiền xử lý
         df = preprocess_input(df)
-        df, forecasted_info = predict_missing_values(df)
+
+        # 🔹 Bước 2: ML xử lý giá trị thiếu (lần 1)
+        df, forecasted_info_1 = predict_missing_values(df)
+
+        # 🔹 Bước 3: Nội suy theo nhóm giếng
+        df = df.sort_values(by=["UniqueId", "DayOn"])
+        df[EXPECTED_COLUMNS] = df.groupby("UniqueId")[EXPECTED_COLUMNS]\
+                                 .transform(lambda g: g.interpolate(method='linear', limit_direction='both'))
+
+        # 🔹 Bước 4: ML xử lý lại giá trị thiếu (lần 2 sau nội suy)
+        df, forecasted_info_2 = predict_missing_values(df)
+
+        # 🔹 Bước 5: Phát hiện bất thường
         df = detect_anomalies(df)
 
-        # Chuyển DataFrame thành list of lists (mảng 2 chiều)
+        # 🔹 Tổng hợp kết quả
+        forecasted_info = forecasted_info_1 + forecasted_info_2
         result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label']].values.tolist()
 
         result = {
             "status": "success",
-            "data": result_array,  # Trả về mảng dữ liệu thay vì dict
+            "data": result_array,
             "forecasted_info": forecasted_info,
             "anomaly_stats": {
                 "total_records": len(df),
@@ -163,3 +177,4 @@ def process_data():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
+
