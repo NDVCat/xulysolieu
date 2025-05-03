@@ -167,6 +167,7 @@ def process_data():
         forecasted_info = forecasted_info_1 + forecasted_info_2
         result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label', 'is_interpolated']].values.tolist()
 
+        # Trả về dữ liệu dưới dạng JSON để Power Automate có thể tạo CSV
         result = {
             "status": "success",
             "data": result_array,

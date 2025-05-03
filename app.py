@@ -114,6 +114,21 @@ def detect_anomalies(df):
         df["anomaly_label"] = "error"
         return df
 
+# 📌 Nội suy và đánh dấu các giá trị nội suy
+def interpolate_with_flag(df):
+    df['is_interpolated'] = 0  # Khởi tạo cột is_interpolated với giá trị mặc định là 0 (gốc)
+
+    # Nội suy và đánh dấu các hàng nội suy
+    df = df.sort_values(by=["UniqueId", "DayOn"])
+
+    for col in EXPECTED_COLUMNS:
+        if col not in ['ChokeSize', 'GasRate']:  # Giới hạn nội suy chỉ trên các cột có thể thay đổi
+            df[col] = df.groupby('UniqueId')[col].apply(lambda group: group.interpolate(method='linear', limit_direction='both'))
+            # Đánh dấu các giá trị được nội suy
+            df.loc[df[col].isnull(), 'is_interpolated'] = 1
+
+    return df
+
 # 📌 API chính
 @app.route('/process', methods=['POST'])
 def process_data():
@@ -139,10 +154,8 @@ def process_data():
         # 🔹 Bước 2: ML xử lý giá trị thiếu (lần 1)
         df, forecasted_info_1 = predict_missing_values(df)
 
-        # 🔹 Bước 3: Nội suy theo nhóm giếng
-        df = df.sort_values(by=["UniqueId", "DayOn"])
-        df[EXPECTED_COLUMNS] = df.groupby("UniqueId")[EXPECTED_COLUMNS]\
-                                 .transform(lambda g: g.interpolate(method='linear', limit_direction='both'))
+        # 🔹 Bước 3: Nội suy và đánh dấu các giá trị nội suy
+        df = interpolate_with_flag(df)
 
         # 🔹 Bước 4: ML xử lý lại giá trị thiếu (lần 2 sau nội suy)
         df, forecasted_info_2 = predict_missing_values(df)
@@ -152,8 +165,9 @@ def process_data():
 
         # 🔹 Tổng hợp kết quả
         forecasted_info = forecasted_info_1 + forecasted_info_2
-        result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label']].values.tolist()
+        result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label', 'is_interpolated']].values.tolist()
 
+        # Trả về dữ liệu dưới dạng JSON để Power Automate có thể tạo CSV
         result = {
             "status": "success",
             "data": result_array,
@@ -177,4 +191,3 @@ def process_data():
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
-
