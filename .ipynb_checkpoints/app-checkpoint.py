@@ -19,6 +19,8 @@ PRESERVED_COLUMNS = ['UniqueId', 'Date', 'Method']
 EXPECTED_COLUMNS = ['DayOn', 'Qoil', 'Qgas', 'Qwater', 'GOR', 'ChokeSize',
                     'Press_WH', 'Oilrate', 'LiqRate', 'GasRate']
 
+INTERPOLATE_COLUMNS = ['Oilrate', 'GOR', 'LiqRate', 'Qgas']
+
 # 📌 Tải mô hình phát hiện bất thường
 try:
     if not os.path.exists(ANOMALY_MODEL_PATH):
@@ -38,7 +40,7 @@ def load_model(col_name):
     model_path = os.path.join(MODEL_DIR, f"{col_name}.pkl")
     return joblib.load(model_path) if os.path.exists(model_path) else None
 
-# 📌 Xử lý dữ liệu đầu vào
+# 📌 Tiền xử lý
 def preprocess_input(df):
     df = df[[col for col in PRESERVED_COLUMNS + EXPECTED_COLUMNS if col in df.columns]]
     df.replace({"...": np.nan, "null": np.nan, "NaN": np.nan, "": np.nan}, inplace=True)
@@ -86,22 +88,19 @@ def predict_missing_values(df):
     df["forecasted_columns"] = forecasted_columns
     return df, forecasted_info
 
-# 📌 Nội suy và đánh dấu các giá trị nội suy
+# 📌 Nội suy có cờ
 def interpolate_with_flag(df):
-    df['is_interpolated'] = 0  # Khởi tạo cột is_interpolated với giá trị mặc định là 0 (gốc)
-
-    # Nội suy và đánh dấu các giá trị được nội suy
+    df['is_interpolated'] = 0
     df = df.sort_values(by=["UniqueId", "DayOn"])
 
-    for col in EXPECTED_COLUMNS:
-        if col not in ['ChokeSize', 'GasRate']:  # Giới hạn nội suy chỉ trên các cột có thể thay đổi
-            df[col] = df.groupby('UniqueId')[col].apply(lambda group: group.interpolate(method='linear', limit_direction='both'))
-            # Đánh dấu các giá trị được nội suy
-            df.loc[df[col].isnull(), 'is_interpolated'] = 1
+    for col in INTERPOLATE_COLUMNS:
+        if col in df.columns:
+            before = df[col].copy()
+            df[col] = df.groupby("UniqueId")[col].transform(lambda group: group.interpolate(method='linear', limit_direction='both'))
+            interpolated_idx = before.isna() & df[col].notna()
+            df.loc[interpolated_idx, 'is_interpolated'] = 1
 
-    # Đảm bảo chỉ số của các cột không bị thay đổi sau khi thực hiện nội suy
     df = df.sort_index()
-
     return df
 
 # 📌 Phát hiện bất thường
@@ -116,9 +115,9 @@ def detect_anomalies(df):
             df["anomaly_label"] = "unknown"
             return df
 
-        df_scaled = pd.DataFrame(scaler.transform(df_anomaly), columns=numeric_cols)
+        df_scaled = pd.DataFrame(scaler.transform(df_anomaly), columns=numeric_cols, index=df_anomaly.index)
         pca_result = pca.transform(df_scaled)
-        pca_df = pd.DataFrame(pca_result[:, :2], columns=["PC1", "PC2"])
+        pca_df = pd.DataFrame(pca_result[:, :2], columns=["PC1", "PC2"], index=df_anomaly.index)
         anomaly_pred = iso_forest.predict(pca_df)
 
         df.loc[df_anomaly.index, "anomaly"] = anomaly_pred
@@ -132,11 +131,11 @@ def detect_anomalies(df):
         df["anomaly_label"] = "error"
         return df
 
-# 📌 API chính
+# 📌 API
 @app.route('/process', methods=['POST'])
 def process_data():
     try:
-        # 🔹 Đọc file vào DataFrame
+        # 🔹 Nhận dữ liệu
         if request.content_type == 'text/csv':
             csv_text = request.data.decode('utf-8')
             df = pd.read_csv(io.StringIO(csv_text))
@@ -151,43 +150,27 @@ def process_data():
         else:
             return jsonify({"error": "No valid input found (file or CSV text)"}), 400
 
-        # 🔹 Bước 1: Tiền xử lý
+        # 🔹 Xử lý
         df = preprocess_input(df)
-
-        # 🔹 Bước 2: ML xử lý giá trị thiếu (lần 1)
         df, forecasted_info_1 = predict_missing_values(df)
-
-        # 🔹 Bước 3: Nội suy theo nhóm giếng và đánh dấu
         df = interpolate_with_flag(df)
-
-        # 🔹 Bước 4: ML xử lý lại giá trị thiếu (lần 2 sau nội suy)
         df, forecasted_info_2 = predict_missing_values(df)
-
-        # 🔹 Bước 5: Phát hiện bất thường
         df = detect_anomalies(df)
 
-        # 🔹 Tổng hợp kết quả
         forecasted_info = forecasted_info_1 + forecasted_info_2
-        result_array = df[EXPECTED_COLUMNS + ['is_forecasted', 'forecasted_columns', 'anomaly', 'anomaly_label', 'is_interpolated']].values.tolist()
-
-        # Trả về dữ liệu dưới dạng CSV cho Power Automate
         result_csv = df.to_csv(index=False)
-
-        # 📌 Thống kê về bất thường
-        anomaly_stats = {
-            "total_records": len(df),
-            "normal": int((df["anomaly"] == 1).sum()),
-            "anomaly": int((df["anomaly"] == -1).sum()),
-            "unknown": int((df["anomaly_label"] == "unknown").sum()),
-            "error": int((df["anomaly_label"] == "error").sum())
-        }
 
         result = {
             "status": "success",
-            "data": result_array,
-            "csv": result_csv,  # CSV cho Power Automate
+            "csv": result_csv,
             "forecasted_info": forecasted_info,
-            "anomaly_stats": anomaly_stats
+            "anomaly_stats": {
+                "total_records": len(df),
+                "normal": int((df["anomaly"] == 1).sum()),
+                "anomaly": int((df["anomaly"] == -1).sum()),
+                "unknown": int((df["anomaly_label"] == "unknown").sum()),
+                "error": int((df["anomaly_label"] == "error").sum())
+            }
         }
 
         return jsonify(result)
@@ -196,8 +179,7 @@ def process_data():
         print(f"❌ Lỗi hệ thống: {e}")
         return jsonify({"error": str(e), "status": "failed"}), 500
 
-# 📌 Khởi chạy
+# 📌 Run server
 if __name__ == '__main__':
     port = int(os.environ.get('PORT', 10000))
     app.run(host='0.0.0.0', port=port, debug=True)
-
